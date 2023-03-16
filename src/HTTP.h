@@ -32,6 +32,7 @@
 #include <memory>
 #include <string>
 #include <cpr/cpr.h>
+#include "cpr/cprtypes.h"
 
 namespace influxdb::transports
 {
@@ -64,6 +65,10 @@ namespace influxdb::transports
         /// \param pass password
         void setBasicAuthentication(const std::string& user, const std::string& pass);
 
+        /// Set API token
+        /// \param apiToken API token
+        void setApiToken(const std::string& apiToken) override;
+
         /// Sets proxy
         void setProxy(const Proxy& proxy) override;
 
@@ -71,6 +76,8 @@ namespace influxdb::transports
         std::string endpointUrl;
         std::string databaseName;
         cpr::Session session;
+
+        cpr::Header header;
     };
 
 } // namespace influxdb

@@ -39,6 +39,11 @@ namespace influxdb
     class INFLUXDB_EXPORT InfluxDBFactory
     {
     public:
+        struct Options {
+            std::optional<Proxy> proxy;
+            std::optional<std::string> apiToken;
+        };
+
         /// Disables copy constructor
         InfluxDBFactory& operator=(const InfluxDBFactory&) = delete;
 
@@ -57,6 +62,14 @@ namespace influxdb
         /// \param proxy   Proxy
         /// \throw InfluxDBException     if unrecognised backend, missing protocol or unsupported proxy
         static std::unique_ptr<InfluxDB> Get(const std::string& url, const Proxy& proxy);
+
+        /// InfluxDB factory
+        /// Provides InfluxDB instance with given transport and proxy
+        /// \param url   URL defining transport details
+        /// \param options   options for transport layer
+        /// \throw InfluxDBException     if unrecognised backend, missing protocol or unsupported proxy
+        static std::unique_ptr<InfluxDB> GetWithOptions(const std::string& url, const Options& options);
+
 
     private:
         ///\return  backend based on provided URL

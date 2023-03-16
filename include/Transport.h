@@ -69,6 +69,12 @@ namespace influxdb
         {
             throw InfluxDBException{"Proxy is not supported by the selected transport"};
         }
+
+        /// Sets proxy
+        virtual void setApiToken([[maybe_unused]] const std::string& apiToken)
+        {
+            throw InfluxDBException{"Proxy is not supported by the selected transport"};
+        }
     };
 
 } // namespace influxdb

@@ -96,10 +96,19 @@ namespace influxdb::transports
         session.SetAuth(cpr::Authentication{user, pass, cpr::AuthMode::BASIC});
     }
 
+    void HTTP::setApiToken(const std::string& apiToken)
+    {
+        header["Authorization"] = "Token " + apiToken;
+    }
+
     void HTTP::send(std::string&& lineprotocol)
     {
         session.SetUrl(cpr::Url{endpointUrl + "/write"});
-        session.SetHeader(cpr::Header{{"Content-Type", "application/json"}});
+
+        cpr::Header sendHeader (cpr::Header{{"Content-Type", "application/json"}});
+        sendHeader.insert(header.begin(), header.end());
+        session.SetHeader(sendHeader);
+
         session.SetParameters(cpr::Parameters{{"db", databaseName}});
         session.SetBody(cpr::Body{lineprotocol});
 

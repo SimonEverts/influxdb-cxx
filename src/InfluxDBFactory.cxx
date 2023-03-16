@@ -89,4 +89,17 @@ namespace influxdb
         return std::make_unique<InfluxDB>(std::move(transport));
     }
 
+    std::unique_ptr<InfluxDB> InfluxDBFactory::GetWithOptions(const std::string& url, const Options& options)
+    {
+        auto transport = InfluxDBFactory::GetTransport(url);
+        if (options.proxy.has_value()) {
+            transport->setProxy(options.proxy.value());
+        }
+        if (options.apiToken.has_value()) {
+            transport->setApiToken(options.apiToken.value());
+        }
+
+        return std::make_unique<InfluxDB>(std::move(transport));
+    }
+
 } // namespace influxdb
