@@ -27,6 +27,7 @@
 
 #include "HTTP.h"
 #include "InfluxDBException.h"
+#include <optional>
 
 namespace influxdb::transports
 {
@@ -62,19 +63,49 @@ namespace influxdb::transports
 
         std::string parseDatabaseName(const std::string& url)
         {
-            const auto dbParameterPosition = url.find("?db=");
+            auto dbParameterPosition = url.find("?db=");
+            if (dbParameterPosition == std::string::npos) {
+                dbParameterPosition = url.find("&db=");
+            }
 
             if (dbParameterPosition == std::string::npos)
             {
                 throw InfluxDBException{"No Database specified"};
             }
-            return url.substr(dbParameterPosition + 4);
+
+            auto dbName = url.substr(dbParameterPosition + 4);
+            auto separatorPos = dbName.find("&");
+            if (separatorPos != std::string::npos) {
+                dbName = dbName.substr(0, separatorPos);
+            }
+
+            return dbName;
+        }
+
+        std::optional<std::string> parseRetentionPolicy(const std::string& url)
+        {
+            auto dbParameterPosition = url.find("?rp=");
+            if (dbParameterPosition == std::string::npos) {
+                dbParameterPosition = url.find("&rp=");
+            }
+
+            if (dbParameterPosition == std::string::npos) {
+                return std::nullopt;
+            }
+
+            auto rpName = url.substr(dbParameterPosition + 4);
+            auto separatorPos = rpName.find("&");
+            if (separatorPos != std::string::npos) {
+                rpName = rpName.substr(0, separatorPos);
+            }
+
+            return rpName;
         }
     }
 
 
     HTTP::HTTP(const std::string& url)
-        : endpointUrl(parseUrl(url)), databaseName(parseDatabaseName(url))
+        : endpointUrl(parseUrl(url)), databaseName(parseDatabaseName(url)), retentionPolicyName(parseRetentionPolicy(url))
     {
         session.SetTimeout(cpr::Timeout{std::chrono::seconds{10}});
         session.SetConnectTimeout(cpr::ConnectTimeout{std::chrono::seconds{10}});
@@ -83,7 +114,12 @@ namespace influxdb::transports
     std::string HTTP::query(const std::string& query)
     {
         session.SetUrl(cpr::Url{endpointUrl + "/query"});
-        session.SetParameters(cpr::Parameters{{"db", databaseName}, {"q", query}});
+
+        auto parameters = cpr::Parameters{{"db", databaseName}, {"q", query}};
+        if (retentionPolicyName.has_value()) {
+            parameters.Add({"rp", retentionPolicyName.value()});
+        }
+        session.SetParameters(parameters);
 
         const auto response = session.Get();
         checkResponse(response);
@@ -109,10 +145,15 @@ namespace influxdb::transports
         sendHeader.insert(header.begin(), header.end());
         session.SetHeader(sendHeader);
 
-        session.SetParameters(cpr::Parameters{{"db", databaseName}});
+        auto parameters = cpr::Parameters{{"db", databaseName}};
+        if (retentionPolicyName.has_value()) {
+            parameters.Add({"rp", retentionPolicyName.value()});
+        }
+        session.SetParameters(parameters);
         session.SetBody(cpr::Body{lineprotocol});
 
         const auto response = session.Post();
+
         checkResponse(response);
     }
 
@@ -130,7 +171,12 @@ namespace influxdb::transports
     std::string HTTP::execute(const std::string& cmd)
     {
         session.SetUrl(cpr::Url{endpointUrl + "/query"});
-        session.SetParameters(cpr::Parameters{{"db", databaseName}, {"q", cmd}});
+
+        auto parameters = cpr::Parameters{{"db", databaseName}, {"q", cmd}};
+        if (retentionPolicyName.has_value()) {
+            parameters.Add({"rp", retentionPolicyName.value()});
+        }
+        session.SetParameters(parameters);
 
         const auto response = session.Get();
         checkResponse(response);

@@ -75,6 +75,7 @@ namespace influxdb::transports
     private:
         std::string endpointUrl;
         std::string databaseName;
+        std::optional<std::string> retentionPolicyName;
         cpr::Session session;
 
         cpr::Header header;
