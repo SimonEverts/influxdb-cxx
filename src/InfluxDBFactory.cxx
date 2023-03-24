@@ -39,9 +39,9 @@ namespace influxdb
 {
     namespace internal
     {
-        std::unique_ptr<Transport> withHttpTransport(const http::url& uri)
+        std::unique_ptr<Transport> withHttpTransport(const http::url& uri, Transport::EndpointVersion version)
         {
-            auto transport = std::make_unique<transports::HTTP>(uri.url);
+            auto transport = std::make_unique<transports::HTTP>(uri.url, version);
             if (!uri.user.empty())
             {
                 transport->setBasicAuthentication(uri.user, uri.password);
@@ -51,9 +51,9 @@ namespace influxdb
 
     }
 
-    std::unique_ptr<Transport> InfluxDBFactory::GetTransport(const std::string& url)
+    std::unique_ptr<Transport> InfluxDBFactory::GetTransport(const std::string& url, Transport::EndpointVersion version)
     {
-        static const std::map<std::string, std::function<std::unique_ptr<Transport>(const http::url&)>> map = {
+        static const std::map<std::string, std::function<std::unique_ptr<Transport>(const http::url&, Transport::EndpointVersion)>> map = {
             {"udp", internal::withUdpTransport},
             {"tcp", internal::withTcpTransport},
             {"http", internal::withHttpTransport},
@@ -74,24 +74,24 @@ namespace influxdb
             throw InfluxDBException("Unrecognized backend " + parsedUrl.protocol);
         }
 
-        return iterator->second(parsedUrl);
+        return iterator->second(parsedUrl, version);
     }
 
-    std::unique_ptr<InfluxDB> InfluxDBFactory::Get(const std::string& url)
+    std::unique_ptr<InfluxDB> InfluxDBFactory::Get(const std::string& url, Transport::EndpointVersion version)
     {
-        return std::make_unique<InfluxDB>(InfluxDBFactory::GetTransport(url));
+        return std::make_unique<InfluxDB>(InfluxDBFactory::GetTransport(url, version));
     }
 
     std::unique_ptr<InfluxDB> InfluxDBFactory::Get(const std::string& url, const Proxy& proxy)
     {
-        auto transport = InfluxDBFactory::GetTransport(url);
+        auto transport = InfluxDBFactory::GetTransport(url, Transport::EndpointVersion::v1);
         transport->setProxy(proxy);
         return std::make_unique<InfluxDB>(std::move(transport));
     }
 
     std::unique_ptr<InfluxDB> InfluxDBFactory::GetWithOptions(const std::string& url, const Options& options)
     {
-        auto transport = InfluxDBFactory::GetTransport(url);
+        auto transport = InfluxDBFactory::GetTransport(url, options.endpointVersion.value_or(Transport::EndpointVersion::v1));
         if (options.proxy.has_value()) {
             transport->setProxy(options.proxy.value());
         }

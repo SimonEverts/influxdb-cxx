@@ -39,6 +39,8 @@ namespace influxdb
     class INFLUXDB_EXPORT Transport
     {
     public:
+        enum class EndpointVersion {v1, v2};
+
         Transport() = default;
 
         virtual ~Transport() = default;

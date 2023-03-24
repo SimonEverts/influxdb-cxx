@@ -27,6 +27,7 @@
 
 #include "HTTP.h"
 #include "InfluxDBException.h"
+#include "Transport.h"
 #include <optional>
 
 namespace influxdb::transports
@@ -61,64 +62,114 @@ namespace influxdb::transports
             return url.substr(0, questionMarkPosition);
         }
 
-        std::string parseDatabaseName(const std::string& url)
+        std::optional<std::string> parseParameter(const std::string& url, const std::string& name)
         {
-            auto dbParameterPosition = url.find("?db=");
-            if (dbParameterPosition == std::string::npos) {
-                dbParameterPosition = url.find("&db=");
+            auto pos = url.find("?" + name + "=");
+            if (pos == std::string::npos) {
+                pos = url.find("&" + name + "=");
             }
 
-            if (dbParameterPosition == std::string::npos)
-            {
-                throw InfluxDBException{"No Database specified"};
+            if (pos == std::string::npos) {
+                return std::nullopt;
             }
 
-            auto dbName = url.substr(dbParameterPosition + 4);
-            auto separatorPos = dbName.find("&");
+            auto substr = url.substr(pos + 2 + name.length());
+            auto separatorPos = substr.find("&");
             if (separatorPos != std::string::npos) {
-                dbName = dbName.substr(0, separatorPos);
+                substr = substr.substr(0, separatorPos);
             }
 
-            return dbName;
+            return substr;
+        }
+
+        std::optional<std::string> parseDatabaseName(const std::string& url)
+        {
+            return parseParameter(url, "db");
         }
 
         std::optional<std::string> parseRetentionPolicy(const std::string& url)
         {
-            auto dbParameterPosition = url.find("?rp=");
-            if (dbParameterPosition == std::string::npos) {
-                dbParameterPosition = url.find("&rp=");
-            }
+            return parseParameter(url, "rp");
+        }
 
-            if (dbParameterPosition == std::string::npos) {
-                return std::nullopt;
-            }
+        std::optional<std::string> parseBucket(const std::string& url)
+        {
+            return parseParameter(url, "bucket");
+        }
 
-            auto rpName = url.substr(dbParameterPosition + 4);
-            auto separatorPos = rpName.find("&");
-            if (separatorPos != std::string::npos) {
-                rpName = rpName.substr(0, separatorPos);
-            }
-
-            return rpName;
+        std::optional<std::string> parseOrganization(const std::string& url)
+        {
+            return parseParameter(url, "org");
         }
     }
 
 
-    HTTP::HTTP(const std::string& url)
-        : endpointUrl(parseUrl(url)), databaseName(parseDatabaseName(url)), retentionPolicyName(parseRetentionPolicy(url))
+    HTTP::HTTP(const std::string& url, EndpointVersion version)
+        : endpointUrl(parseUrl(url)), databaseName(parseDatabaseName(url)),
+        endpointVersion(version)
     {
         session.SetTimeout(cpr::Timeout{std::chrono::seconds{10}});
         session.SetConnectTimeout(cpr::ConnectTimeout{std::chrono::seconds{10}});
+
+        databaseName = parseDatabaseName(url);
+        retentionPolicyName = parseRetentionPolicy(url);
+        bucketName = parseBucket(url);
+        organization = parseOrganization(url);
+
+        if (endpointVersion == EndpointVersion::v1) {
+            if (!databaseName.has_value()) {
+                throw InfluxDBException{"No Database specified in URL"};
+            }
+
+            if (bucketName.has_value()) {
+                throw InfluxDBException{"Bucket provided in URL but not supported for endpoint v1"};
+            }
+        } else { // EndpointVersion::v2
+            if (databaseName.has_value()) {
+                throw InfluxDBException{"Database provided in URL but not supported for endpoint v2"};
+            }
+            if (retentionPolicyName.has_value()) {
+                throw InfluxDBException{"Retention policy provided in URL but not supported for endpoint v2"};
+            }
+
+            if (!bucketName.has_value()) {
+                throw InfluxDBException{"Bucket is required as URL parameter for endpoint version v2"};
+            }
+            if (!organization.has_value()) {
+                throw InfluxDBException{"Organization is required as URL parameter for endpoint version v2"};
+            }
+        }
+    }
+
+    cpr::Parameters HTTP::parameters()
+    {
+        if (endpointVersion == EndpointVersion::v1) {
+            auto parameters = cpr::Parameters{{"db", databaseName.value()}};
+            if (retentionPolicyName.has_value()) {
+                parameters.Add({"rp", retentionPolicyName.value()});
+            }
+            return parameters;
+        }
+
+        if (endpointVersion == EndpointVersion::v2) {
+            auto parameters = cpr::Parameters{
+                {"org", organization.value()},
+                {"bucket", bucketName.value()}
+                };
+        
+            return parameters;
+        }
+
+        throw InfluxDBException{"Not implemented for current endpoint version"};
     }
 
     std::string HTTP::query(const std::string& query)
     {
         session.SetUrl(cpr::Url{endpointUrl + "/query"});
 
-        auto parameters = cpr::Parameters{{"db", databaseName}, {"q", query}};
-        if (retentionPolicyName.has_value()) {
-            parameters.Add({"rp", retentionPolicyName.value()});
-        }
+        auto parameters = this->parameters();
+        parameters.Add({"q", query});
+        
         session.SetParameters(parameters);
 
         const auto response = session.Get();
@@ -145,11 +196,7 @@ namespace influxdb::transports
         sendHeader.insert(header.begin(), header.end());
         session.SetHeader(sendHeader);
 
-        auto parameters = cpr::Parameters{{"db", databaseName}};
-        if (retentionPolicyName.has_value()) {
-            parameters.Add({"rp", retentionPolicyName.value()});
-        }
-        session.SetParameters(parameters);
+        session.SetParameters(parameters());
         session.SetBody(cpr::Body{lineprotocol});
 
         const auto response = session.Post();
@@ -172,10 +219,9 @@ namespace influxdb::transports
     {
         session.SetUrl(cpr::Url{endpointUrl + "/query"});
 
-        auto parameters = cpr::Parameters{{"db", databaseName}, {"q", cmd}};
-        if (retentionPolicyName.has_value()) {
-            parameters.Add({"rp", retentionPolicyName.value()});
-        }
+        auto parameters = this->parameters();
+        parameters.Add({"q", cmd});
+
         session.SetParameters(parameters);
 
         const auto response = session.Get();
@@ -186,8 +232,12 @@ namespace influxdb::transports
 
     void HTTP::createDatabase()
     {
+        if (endpointVersion != Transport::EndpointVersion::v1) {
+            throw InfluxDBException("Database only supported for endpoint v1");
+        }
+
         session.SetUrl(cpr::Url{endpointUrl + "/query"});
-        session.SetParameters(cpr::Parameters{{"q", "CREATE DATABASE " + databaseName}});
+        session.SetParameters(cpr::Parameters{{"q", "CREATE DATABASE " + databaseName.value()}});
 
         const auto response = session.Post();
         checkResponse(response);

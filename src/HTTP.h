@@ -33,6 +33,7 @@
 #include <string>
 #include <cpr/cpr.h>
 #include "cpr/cprtypes.h"
+#include "cpr/parameters.h"
 
 namespace influxdb::transports
 {
@@ -42,7 +43,7 @@ namespace influxdb::transports
     {
     public:
         /// Constructor
-        explicit HTTP(const std::string& url);
+        explicit HTTP(const std::string& url, EndpointVersion version);
 
         /// Sends point via HTTP POST
         ///  \throw InfluxDBException	when send fails
@@ -73,9 +74,19 @@ namespace influxdb::transports
         void setProxy(const Proxy& proxy) override;
 
     private:
+        cpr::Parameters parameters();
+
         std::string endpointUrl;
-        std::string databaseName;
+        EndpointVersion endpointVersion {EndpointVersion::v1};
+        
+        // v1
+        std::optional<std::string> databaseName;
         std::optional<std::string> retentionPolicyName;
+
+        // v2
+        std::optional<std::string> bucketName;
+        std::optional<std::string> organization;
+        
         cpr::Session session;
 
         cpr::Header header;

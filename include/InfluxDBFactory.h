@@ -41,6 +41,8 @@ namespace influxdb
     public:
         struct Options {
             std::optional<Proxy> proxy;
+
+            std::optional<Transport::EndpointVersion> endpointVersion;
             std::optional<std::string> apiToken;
         };
 
@@ -54,7 +56,7 @@ namespace influxdb
         /// Provides InfluxDB instance with given transport
         /// \param url   URL defining transport details
         /// \throw InfluxDBException     if unrecognised backend or missing protocol
-        static std::unique_ptr<InfluxDB> Get(const std::string& url) noexcept(false);
+        static std::unique_ptr<InfluxDB> Get(const std::string& url, Transport::EndpointVersion version) noexcept(false);
 
         /// InfluxDB factory
         /// Provides InfluxDB instance with given transport and proxy
@@ -73,7 +75,7 @@ namespace influxdb
 
     private:
         ///\return  backend based on provided URL
-        static std::unique_ptr<Transport> GetTransport(const std::string& url);
+        static std::unique_ptr<Transport> GetTransport(const std::string& url, Transport::EndpointVersion version);
 
         /// Private constructor disallows to create instance of Factory
         InfluxDBFactory() = default;
